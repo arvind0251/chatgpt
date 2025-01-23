@@ -1,43 +1,44 @@
-
-import os
+import telebot
 import openai
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+import os
+from flask import Flask, request
 
-# Set your OpenAI API key
-openai.api_key = 'YOUR_OPENAI_API_KEY'
+# Load environment variables
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Function to handle messages
-def handle_message(update: Update, context: CallbackContext):
-    user_message = update.message.text
+# Set OpenAI API Key
+openai.api_key = OPENAI_API_KEY
 
-    # Call OpenAI's GPT-4 model
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": user_message}]
-    )
+# Initialize Telegram Bot
+bot = telebot.TeleBot(BOT_TOKEN)
 
-    bot_reply = response['choices'][0]['message']['content']
-    update.message.reply_text(bot_reply)
+# Flask App for Webhook
+app = Flask(__name__)
 
-# Function to start the bot
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text("Hello! I'm a GPT-4 powered bot. How can I assist you today?")
+@app.route('/' + BOT_TOKEN, methods=['POST'])
+def webhook():
+    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
+    bot.process_new_updates([update])
+    return "OK", 200
 
-def main():
-    # Create the Updater and pass it your bot's token
-    updater = Updater("YOUR_TELEGRAM_BOT_TOKEN")
+@bot.message_handler(func=lambda message: True)
+def chat_with_gpt(message):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": message.text}]
+        )
+        bot.reply_to(message, response["choices"][0]["message"]["content"])
+    except Exception as e:
+        bot.reply_to(message, "Error: " + str(e))
 
-    # Get the dispatcher to register handlers
-    dp = updater.dispatcher
+# Start Flask server
+@app.route('/')
+def index():
+    return "ChatGPT Bot is Running!"
 
-    # Register handlers
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-
-    # Start the Bot
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    bot.remove_webhook()
+    bot.set_webhook(url="https://your-heroku-app-name.herokuapp.com/" + BOT_TOKEN)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
