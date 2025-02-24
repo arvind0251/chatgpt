@@ -1,44 +1,60 @@
-import telebot
+import logging
 import openai
 import os
-from flask import Flask, request
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackContext)
 
-# Load environment variables
+# 🔑 Bot Token & OpenAI API Key (Fetch from Environment Variables for Security)
+TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+OWNER_USERNAME = "@RU_DRA_65"
+GROUP_LINK = "https://t.me/@RU_DRA_098"
 
-# Set OpenAI API Key
-openai.api_key = OPENAI_API_KEY
+# 📌 Logging setup
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Initialize Telegram Bot
-bot = telebot.TeleBot(BOT_TOKEN)
+# 🤖 Generate AI Response using GPT-4 API
+def generate_response(user_input):
+    openai.api_key = OPENAI_API_KEY
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": user_input}],
+        max_tokens=150
+    )
+    return response["choices"][0]["message"]["content"].strip()
 
-# Flask App for Webhook
-app = Flask(__name__)
+# 🏠 Start Command
+async def start(update: Update, context: CallbackContext) -> None:
+    keyboard = [
+        [InlineKeyboardButton("👑 Owner", url=f"https://t.me/{OWNER_USERNAME}")],
+        [InlineKeyboardButton("💬 Join Group", url=GROUP_LINK)]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # 🖼️ Send Image from URL
+    image_url = "https://your-image-url.com/start.jpg"  # 🛠️ Replace with your image URL
+    await update.message.reply_photo(photo=image_url, caption="Hello! I'm YOUR BABY. Talk to me!", reply_markup=reply_markup)
 
-@app.route('/' + BOT_TOKEN, methods=['POST'])
-def webhook():
-    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
-    bot.process_new_updates([update])
-    return "OK", 200
+# 🤖 Handle Messages
+async def chat(update: Update, context: CallbackContext) -> None:
+    user_message = update.message.text
+    response = generate_response(user_message)
+    await update.message.reply_text(response)
 
-@bot.message_handler(func=lambda message: True)
-def chat_with_gpt(message):
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": message.text}]
-        )
-        bot.reply_to(message, response["choices"][0]["message"]["content"])
-    except Exception as e:
-        bot.reply_to(message, "Error: " + str(e))
+# 🚀 Main Function (Bot Initialization)
+def main() -> None:
+    app = ApplicationBuilder().token(TOKEN).build()
+    
+    # 🔥 Command Handlers
+    app.add_handler(CommandHandler("start", start))
+    
+    # 📩 Message Handler
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
+    
+    # 🔄 Polling System
+    app.run_polling()
 
-# Start Flask server
-@app.route('/')
-def index():
-    return "ChatGPT Bot is Running!"
-
+# 🔥 Run Bot
 if __name__ == "__main__":
-    bot.remove_webhook()
-    bot.set_webhook(url="https://your-heroku-app-name.herokuapp.com/" + BOT_TOKEN)
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    main()
